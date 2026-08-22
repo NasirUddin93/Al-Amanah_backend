@@ -36,6 +36,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Read lists are role-scoped inside services (member sees own/shared only)
     Route::get('transactions', [TransactionController::class, 'index']);
     Route::get('transactions/{transaction}', [TransactionController::class, 'show']);
+    Route::post('transactions/{transaction}/upload-receipt-photo', [TransactionController::class, 'uploadReceiptPhoto']);
     Route::get('receipts', [ReceiptController::class, 'index']);
     Route::get('fdrs', [FdrController::class, 'index']);
 

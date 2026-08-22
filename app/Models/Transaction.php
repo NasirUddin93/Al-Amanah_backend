@@ -21,6 +21,9 @@ class Transaction extends Model
         'month',
         'transaction_date',
         'description',
+        'receipt_photo',
+        'receipt_photo_uploaded_at',
+        'receipt_photo_uploaded_by',
     ];
 
     protected $casts = [

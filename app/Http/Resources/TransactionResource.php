@@ -43,6 +43,8 @@ class TransactionResource extends JsonResource
                 'action'       => $this->updated_by ? 'Updated' : 'Created',
             ] : null,
             'receipt'          => $this->whenLoaded('receipt'),
+            'receipt_photo'    => $this->receipt_photo,
+            'receipt_photo_uploaded_at' => $this->receipt_photo_uploaded_at ? (is_string($this->receipt_photo_uploaded_at) ? $this->receipt_photo_uploaded_at : $this->receipt_photo_uploaded_at->format('Y-m-d H:i')) : null,
             'created_at'       => $this->created_at ? $this->created_at->format('Y-m-d H:i') : null,
             'updated_at'       => $this->updated_at ? $this->updated_at->format('Y-m-d H:i') : null,
         ];

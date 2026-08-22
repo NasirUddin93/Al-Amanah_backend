@@ -67,6 +67,36 @@ class TransactionController extends Controller
         return response()->json($result);
     }
 
+    public function uploadReceiptPhoto(Request $request, Transaction $transaction)
+    {
+        $request->validate([
+            'photo'      => ['nullable', 'image', 'max:10240'],
+            'photo_data' => ['nullable', 'string'],
+        ]);
+
+        if ($request->hasFile('photo')) {
+            $path = $request->file('photo')->store('receipts', 'public');
+            $transaction->update([
+                'receipt_photo'             => asset('storage/' . $path),
+                'receipt_photo_uploaded_at' => now(),
+                'receipt_photo_uploaded_by' => auth()->id(),
+            ]);
+        } elseif ($request->filled('photo_data')) {
+            $transaction->update([
+                'receipt_photo'             => $request->input('photo_data'),
+                'receipt_photo_uploaded_at' => now(),
+                'receipt_photo_uploaded_by' => auth()->id(),
+            ]);
+        } else {
+            return response()->json(['message' => 'No receipt photo provided.'], 422);
+        }
+
+        return response()->json([
+            'message'     => 'Receipt photo uploaded successfully.',
+            'transaction' => new TransactionResource($transaction->fresh(['member.memberProfile', 'creator.role', 'updater.role', 'receipt'])),
+        ]);
+    }
+
     public function destroy(Transaction $transaction)
     {
         $this->service->delete($transaction);
@@ -74,4 +104,5 @@ class TransactionController extends Controller
         return response()->json(['message' => 'Transaction deleted (soft).']);
     }
 }
+
 
