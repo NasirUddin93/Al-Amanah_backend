@@ -18,7 +18,7 @@ class TransactionService
 
     public function list(User $user)
     {
-        $query = Transaction::with(['member.memberProfile', 'creator', 'receipt']);
+        $query = Transaction::with(['member.memberProfile', 'creator.role', 'updater.role', 'receipt']);
 
         if ($user->isMember()) {
             $query->whereIn('member_id', $this->visibleMemberIds($user));
@@ -39,7 +39,7 @@ class TransactionService
             abort_unless(in_array($transaction->member_id, $this->visibleMemberIds($user), true), 404);
         }
 
-        return $transaction->load(['member.memberProfile', 'creator', 'receipt']);
+        return $transaction->load(['member.memberProfile', 'creator.role', 'updater.role', 'receipt']);
     }
 
     public function create(array $data): Transaction
