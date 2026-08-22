@@ -43,6 +43,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:super_admin,admin')->group(function () {
         Route::post('transactions', [TransactionController::class, 'store']);
         Route::post('transactions/generate-payments', [TransactionController::class, 'generatePayments']);
+        Route::post('transactions/{transaction}/collect-payment', [TransactionController::class, 'collectPayment']);
         Route::put('transactions/{transaction}', [TransactionController::class, 'update']);
 
         Route::post('fdrs', [FdrController::class, 'store']);

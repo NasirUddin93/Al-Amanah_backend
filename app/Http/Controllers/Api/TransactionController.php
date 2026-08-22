@@ -52,6 +52,21 @@ class TransactionController extends Controller
         return new TransactionResource($this->service->update($transaction, $request->validated()));
     }
 
+    public function collectPayment(Request $request, Transaction $transaction)
+    {
+        $data = $request->validate([
+            'paid_amount'    => ['required', 'numeric', 'min:0.01'],
+            'payment_method' => ['nullable', 'string', 'in:cash,bank,mobile_banking,other'],
+            'payment_date'   => ['nullable', 'date'],
+            'notes'          => ['nullable', 'string', 'max:255'],
+            'create_receipt' => ['nullable', 'boolean'],
+        ]);
+
+        $result = $this->service->collectPayment($transaction, $data);
+
+        return response()->json($result);
+    }
+
     public function destroy(Transaction $transaction)
     {
         $this->service->delete($transaction);
@@ -59,3 +74,4 @@ class TransactionController extends Controller
         return response()->json(['message' => 'Transaction deleted (soft).']);
     }
 }
+

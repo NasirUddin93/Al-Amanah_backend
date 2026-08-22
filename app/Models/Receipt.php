@@ -16,4 +16,9 @@ class Receipt extends Model
     public function transaction() { return $this->belongsTo(Transaction::class); }
     public function member()      { return $this->belongsTo(User::class, 'member_id'); }
     public function creator()     { return $this->belongsTo(User::class, 'created_by'); }
+
+    public static function generateReceiptNo(): string
+    {
+        return 'RCT-' . now()->format('Ymd') . '-' . str_pad((string) (static::withTrashed()->count() + 1), 5, '0', STR_PAD_LEFT);
+    }
 }

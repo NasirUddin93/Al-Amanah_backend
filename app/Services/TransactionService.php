@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Receipt;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\Concerns\ResolvesSharedMembers;
@@ -159,6 +160,117 @@ class TransactionService
         });
     }
 
+    public function collectPayment(Transaction $trx, array $data): array
+    {
+        return DB::transaction(function () use ($trx, $data) {
+            $paidAmount = (float) $data['paid_amount'];
+            $originalAmount = (float) $trx->amount;
+            $remainingDue = max(0, round($originalAmount - $paidAmount, 2));
+            $paymentMethod = $data['payment_method'] ?? 'cash';
+            $paymentDate = $data['payment_date'] ?? now()->toDateString();
+            $notes = $data['notes'] ?? null;
+
+            // Full payment (paid amount >= original amount)
+            if ($remainingDue <= 0) {
+                $trx->update([
+                    'status'           => 'paid',
+                    'amount'           => $paidAmount,
+                    'updated_by'       => auth()->id(),
+                    'transaction_date' => $paymentDate,
+                    'description'      => $notes ? ($trx->description ? "{$trx->description} - {$notes}" : $notes) : $trx->description,
+                ]);
+
+                if (!empty($data['create_receipt'])) {
+                    Receipt::create([
+                        'transaction_id' => $trx->id,
+                        'member_id'      => $trx->member_id,
+                        'created_by'     => auth()->id() ?? 1,
+                        'receipt_no'     => Receipt::generateReceiptNo(),
+                        'amount'         => $paidAmount,
+                        'payment_method' => $paymentMethod,
+                        'receipt_date'   => $paymentDate,
+                    ]);
+                }
+
+                $this->logs->log('collect_payment', $trx, ['status' => 'pending'], $trx->toArray());
+                $this->notifications->send(
+                    $trx->member_id,
+                    'Payment Cleared',
+                    "Payment of BDT {$paidAmount} for {$trx->month} has been cleared in full.",
+                    'payment'
+                );
+
+                return [
+                    'message'       => 'Full payment collected successfully.',
+                    'status'        => 'paid',
+                    'paid_amount'   => $paidAmount,
+                    'remaining_due' => 0,
+                    'transaction'   => $trx->fresh(['member.memberProfile', 'creator.role', 'updater.role', 'receipt']),
+                ];
+            }
+
+            // Partial payment:
+            // 1. Mark this transaction as paid for the amount collected
+            $oldTrxData = $trx->toArray();
+            $desc = $trx->month ? "Subscription for {$trx->month}" : ($trx->description ?: 'Assigned Payment');
+            $trx->update([
+                'status'           => 'paid',
+                'amount'           => $paidAmount,
+                'updated_by'       => auth()->id(),
+                'transaction_date' => $paymentDate,
+                'description'      => "{$desc} (Partial payment: BDT {$paidAmount} of BDT {$originalAmount})" . ($notes ? " - {$notes}" : ""),
+            ]);
+
+            // 2. Create new pending transaction for the remaining due
+            $remainingTrx = Transaction::create([
+                'member_id'        => $trx->member_id,
+                'created_by'       => auth()->id() ?? 1,
+                'transaction_no'   => Transaction::generateTransactionNo(),
+                'type'             => $trx->type,
+                'payment_category' => $trx->payment_category,
+                'amount'           => $remainingDue,
+                'status'           => 'pending',
+                'month'            => $trx->month,
+                'transaction_date' => $trx->transaction_date,
+                'description'      => "Remaining due for {$desc} (Due: BDT {$remainingDue})" . ($notes ? " - Note: {$notes}" : ""),
+            ]);
+
+            if (!empty($data['create_receipt'])) {
+                Receipt::create([
+                    'transaction_id' => $trx->id,
+                    'member_id'      => $trx->member_id,
+                    'created_by'     => auth()->id() ?? 1,
+                    'receipt_no'     => Receipt::generateReceiptNo(),
+                    'amount'         => $paidAmount,
+                    'payment_method' => $paymentMethod,
+                    'receipt_date'   => $paymentDate,
+                ]);
+            }
+
+            $this->logs->log('partial_payment', $trx, $oldTrxData, [
+                'paid_amount'   => $paidAmount,
+                'remaining_due' => $remainingDue,
+                'remaining_trx' => $remainingTrx->transaction_no,
+            ]);
+
+            $this->notifications->send(
+                $trx->member_id,
+                'Partial Payment Received',
+                "Received BDT {$paidAmount}. BDT {$remainingDue} remains due for {$trx->month}.",
+                'payment'
+            );
+
+            return [
+                'message'       => "Partial payment of BDT {$paidAmount} collected. BDT {$remainingDue} remains pending.",
+                'status'        => 'partial',
+                'paid_amount'   => $paidAmount,
+                'remaining_due' => $remainingDue,
+                'transaction'   => $trx->fresh(['member.memberProfile', 'creator.role', 'updater.role', 'receipt']),
+                'remaining_trx' => $remainingTrx->load(['member.memberProfile', 'creator.role', 'updater.role']),
+            ];
+        });
+    }
+
     public function delete(Transaction $trx): void
     {
         $this->logs->log('delete', $trx, $trx->toArray(), null);
@@ -166,3 +278,4 @@ class TransactionService
         $this->notifications->sendToAdmins('Transaction Deleted', "Transaction {$trx->transaction_no} was deleted.", 'transaction');
     }
 }
+
