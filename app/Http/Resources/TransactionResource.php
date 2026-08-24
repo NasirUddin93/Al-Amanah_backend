@@ -42,11 +42,16 @@ class TransactionResource extends JsonResource
                 'role'         => $lastModifier->role?->name ?? 'admin',
                 'action'       => $this->updated_by ? 'Updated' : 'Created',
             ] : null,
-            'receipt'          => $this->whenLoaded('receipt'),
-            'receipt_photo'    => $this->receipt_photo,
+            'receipt'                   => $this->whenLoaded('receipt'),
+            'receipt_photo'             => $this->receipt_photo,
             'receipt_photo_uploaded_at' => $this->receipt_photo_uploaded_at ? (is_string($this->receipt_photo_uploaded_at) ? $this->receipt_photo_uploaded_at : $this->receipt_photo_uploaded_at->format('Y-m-d H:i')) : null,
-            'created_at'       => $this->created_at ? $this->created_at->format('Y-m-d H:i') : null,
-            'updated_at'       => $this->updated_at ? $this->updated_at->format('Y-m-d H:i') : null,
+            'member_paid_amount'        => $this->member_paid_amount !== null ? (float) $this->member_paid_amount : null,
+            'member_trx_reference'      => $this->member_trx_reference,
+            'member_payment_method'     => $this->member_payment_method,
+            'member_comment'            => $this->member_comment,
+            'rejection_reason'          => $this->rejection_reason,
+            'created_at'                => $this->created_at ? $this->created_at->format('Y-m-d H:i') : null,
+            'updated_at'                => $this->updated_at ? $this->updated_at->format('Y-m-d H:i') : null,
         ];
     }
 }

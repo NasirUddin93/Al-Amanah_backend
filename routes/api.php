@@ -45,6 +45,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('transactions', [TransactionController::class, 'store']);
         Route::post('transactions/generate-payments', [TransactionController::class, 'generatePayments']);
         Route::post('transactions/{transaction}/collect-payment', [TransactionController::class, 'collectPayment']);
+        Route::post('transactions/{transaction}/reject-receipt-photo', [TransactionController::class, 'rejectReceiptPhoto']);
         Route::put('transactions/{transaction}', [TransactionController::class, 'update']);
 
         Route::post('fdrs', [FdrController::class, 'store']);

@@ -21,8 +21,12 @@ class ReceiptResource extends JsonResource
                 'member_no' => $this->member->memberProfile?->member_no,
             ]),
             'transaction'    => $this->whenLoaded('transaction', fn () => [
-                'id'             => $this->transaction->id,
-                'transaction_no' => $this->transaction->transaction_no,
+                'id'                        => $this->transaction->id,
+                'transaction_no'            => $this->transaction->transaction_no,
+                'description'               => $this->transaction->description,
+                'month'                     => $this->transaction->month,
+                'receipt_photo'             => $this->transaction->receipt_photo,
+                'receipt_photo_uploaded_at' => $this->transaction->receipt_photo_uploaded_at,
             ]),
             'created_at'     => $this->created_at,
         ];

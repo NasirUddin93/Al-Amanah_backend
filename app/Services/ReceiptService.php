@@ -22,7 +22,8 @@ class ReceiptService
 
         if ($user->isMember()) $query->whereIn('member_id', $this->visibleMemberIds($user));
 
-        return $query->latest('receipt_date')->paginate(15);
+        $perPage = (int) request()->input('per_page', 500);
+        return $query->latest('receipt_date')->latest('id')->paginate($perPage);
     }
 
     public function create(array $data): Receipt

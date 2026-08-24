@@ -25,6 +25,11 @@ class User extends Authenticatable
     public function activityLogs()           { return $this->hasMany(ActivityLog::class); }
 
     public function hasRole(string $role): bool  { return $this->role?->name === $role; }
+    public function hasAnyRole(array|string ...$roles): bool
+    {
+        $roleList = is_array($roles[0] ?? null) ? $roles[0] : $roles;
+        return in_array($this->role?->name, (array) $roleList, true);
+    }
     public function isSuperAdmin(): bool         { return $this->hasRole('super_admin'); }
     public function isAdmin(): bool              { return $this->hasRole('admin'); }
     public function isAccountant(): bool         { return $this->hasRole('accountant'); }
