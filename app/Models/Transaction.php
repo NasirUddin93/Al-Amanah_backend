@@ -24,11 +24,17 @@ class Transaction extends Model
         'receipt_photo',
         'receipt_photo_uploaded_at',
         'receipt_photo_uploaded_by',
+        'member_paid_amount',
+        'member_trx_reference',
+        'member_payment_method',
+        'member_comment',
+        'rejection_reason',
     ];
 
     protected $casts = [
-        'amount' => 'decimal:2',
-        'transaction_date' => 'date',
+        'amount'             => 'decimal:2',
+        'member_paid_amount' => 'decimal:2',
+        'transaction_date'   => 'date',
     ];
 
     public function member()  { return $this->belongsTo(User::class, 'member_id'); }

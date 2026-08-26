@@ -86,6 +86,17 @@ class TransactionService
             foreach ($memberIds as $memberId) {
                 if ($paymentType === 'monthly_payment' && !empty($months)) {
                     foreach ($months as $monthName) {
+                        // Skip if the member already has an active (pending or paid) record for this month
+                        $alreadyExists = Transaction::where('member_id', $memberId)
+                            ->where('payment_category', 'monthly_payment')
+                            ->where('month', $monthName)
+                            ->whereIn('status', ['pending', 'paid'])
+                            ->exists();
+
+                        if ($alreadyExists) {
+                            continue;
+                        }
+
                         $trx = Transaction::create([
                             'member_id'        => $memberId,
                             'created_by'       => auth()->id() ?? 1,

@@ -92,6 +92,30 @@ class UserService
             }
             $user->memberProfile()->create($profileData);
 
+            // If the user is a Member, automatically assign any ongoing monthly subscription demands
+            if ($role && $role->name === 'member') {
+                $existingMonthlyDemands = \App\Models\Transaction::where('payment_category', 'monthly_payment')
+                    ->whereNotNull('month')
+                    ->select('month', 'amount', 'transaction_date', 'description')
+                    ->groupBy('month', 'amount', 'transaction_date', 'description')
+                    ->get();
+
+                foreach ($existingMonthlyDemands as $demand) {
+                    \App\Models\Transaction::create([
+                        'member_id'        => $user->id,
+                        'created_by'       => auth()->id() ?? 1,
+                        'transaction_no'   => \App\Models\Transaction::generateTransactionNo(),
+                        'type'             => 'payment',
+                        'payment_category' => 'monthly_payment',
+                        'amount'           => $demand->amount,
+                        'status'           => 'pending',
+                        'month'            => $demand->month,
+                        'transaction_date' => $demand->transaction_date,
+                        'description'      => $demand->description ?: "Monthly subscription for {$demand->month}",
+                    ]);
+                }
+            }
+
             $this->logs->log('create', $user, null, $user->toArray());
             $this->notifications->send($user->id, 'Welcome', 'Your account has been created.', 'account');
 
