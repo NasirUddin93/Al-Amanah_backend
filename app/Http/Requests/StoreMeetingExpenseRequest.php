@@ -10,9 +10,16 @@ class StoreMeetingExpenseRequest extends FormRequest
     {
         return [
             'title'        => ['required', 'string', 'max:150'],
-            'expense_date' => ['required', 'date'],
+            'expense_date' => ['nullable', 'date'],
             'amount'       => ['required', 'numeric', 'min:0'],
             'description'  => ['nullable', 'string'],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if (empty($this->expense_date)) {
+            $this->merge(['expense_date' => now()->toDateString()]);
+        }
     }
 }

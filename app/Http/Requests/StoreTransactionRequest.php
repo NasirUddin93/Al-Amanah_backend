@@ -15,6 +15,7 @@ class StoreTransactionRequest extends FormRequest
             'amount'           => ['required', 'numeric', 'min:0'],
             'transaction_date' => ['required', 'date'],
             'description'      => ['nullable', 'string'],
+            'transaction_no'   => ['nullable', 'string', 'max:100'],
         ];
     }
 }

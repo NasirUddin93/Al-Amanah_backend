@@ -44,6 +44,16 @@ class Transaction extends Model
 
     public static function generateTransactionNo(): string
     {
-        return 'TRX-' . now()->format('Ymd') . '-' . str_pad((string) (static::withTrashed()->count() + 1), 5, '0', STR_PAD_LEFT);
+        $date = now()->format('Ymd');
+        $next = static::withTrashed()->count() + 1;
+        do {
+            $candidate = 'TRX-' . $date . '-' . str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+            $exists = static::withTrashed()->where('transaction_no', $candidate)->exists();
+            if ($exists) {
+                $next++;
+            }
+        } while ($exists);
+
+        return $candidate;
     }
 }
