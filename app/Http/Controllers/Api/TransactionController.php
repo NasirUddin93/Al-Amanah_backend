@@ -41,6 +41,7 @@ class TransactionController extends Controller
             'title'            => ['nullable', 'string', 'max:150'],
             'due_date'         => ['nullable', 'date'],
             'description'      => ['nullable', 'string'],
+            'transaction_no'   => ['nullable', 'string', 'max:100'],
         ]);
 
         $result = $this->service->generatePayments($data);
@@ -60,6 +61,8 @@ class TransactionController extends Controller
             'payment_method' => ['nullable', 'string', 'in:cash,bank,mobile_banking,other'],
             'payment_date'   => ['nullable', 'date'],
             'notes'          => ['nullable', 'string', 'max:255'],
+            'reference'      => ['nullable', 'string', 'max:255'],
+            'trx_reference'  => ['nullable', 'string', 'max:255'],
             'create_receipt' => ['nullable', 'boolean'],
         ]);
 
@@ -162,12 +165,12 @@ class TransactionController extends Controller
             'updated_by'       => $user->id,
         ]);
 
-        // 2. Automatically generate a new pending transaction row for the member
+        // 2. Automatically generate a new pending transaction row for the member retaining the demand transaction_no
         $newPendingTrx = Transaction::create([
             'member_id'        => $transaction->member_id,
             'created_by'       => $user->id,
             'updated_by'       => null,
-            'transaction_no'   => Transaction::generateTransactionNo(),
+            'transaction_no'   => $transaction->transaction_no,
             'type'             => $transaction->type,
             'payment_category' => $transaction->payment_category,
             'amount'           => $transaction->amount,

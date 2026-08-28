@@ -54,9 +54,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('reports/transactions', [ReportController::class, 'transactions']);
     });
 
-    // Hard delete transactions: Super Admin only
+    // Delete transactions: Super Admin + Admin
     Route::delete('transactions/{transaction}', [TransactionController::class, 'destroy'])
-        ->middleware('role:super_admin');
+        ->middleware('role:super_admin,admin');
     Route::delete('fdrs/{fdr}', [FdrController::class, 'destroy'])->middleware('role:super_admin');
 
     // Receipts management (Super Admin + Admin + Accountant)

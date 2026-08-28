@@ -10,12 +10,13 @@ class MeetingExpenseService
 
     public function list()
     {
-        return MeetingExpense::with('creator')->latest('expense_date')->paginate(15);
+        return MeetingExpense::with(['creator.memberProfile', 'creator.role'])->latest('expense_date')->paginate(100);
     }
 
     public function create(array $data): MeetingExpense
     {
         $expense = MeetingExpense::create($data + ['created_by' => auth()->id()]);
+        $expense->load(['creator.memberProfile', 'creator.role']);
         $this->logs->log('create', $expense, null, $expense->toArray());
 
         return $expense;
