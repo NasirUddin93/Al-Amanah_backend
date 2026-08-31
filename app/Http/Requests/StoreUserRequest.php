@@ -18,6 +18,9 @@ class StoreUserRequest extends FormRequest
             'profile.member_no'    => ['nullable', 'string', 'max:50', 'unique:user_profiles,member_no'],
             'profile.phone'        => ['nullable', 'string', 'max:30'],
             'profile.address'      => ['nullable', 'string'],
+            'profile.id_photo'     => ['nullable'],
+            'profile.id_photos'    => ['nullable', 'array'],
+            'profile.id_photos.*'  => ['nullable', 'string'],
             'profile.share_amount' => ['nullable', 'numeric', 'min:0'],
         ];
     }

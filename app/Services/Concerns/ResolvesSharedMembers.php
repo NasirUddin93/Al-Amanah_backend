@@ -7,19 +7,33 @@ use App\Models\User;
 
 trait ResolvesSharedMembers
 {
-    /** Member's own id + shared ids (husband/wife). */
+    /** Member's own id + all transitively merged member ids (supports 2, 3, 4, 5+ members). */
     protected function visibleMemberIds(User $user): array
     {
-        $ids = [$user->id];
+        $allActiveShares = ProfileShare::where('status', 'active')->get(['primary_user_id', 'shared_user_id']);
 
-        $shares = ProfileShare::where('status', 'active')
-            ->where(fn ($q) => $q->where('primary_user_id', $user->id)->orWhere('shared_user_id', $user->id))
-            ->get();
-
-        foreach ($shares as $share) {
-            $ids[] = $share->primary_user_id === $user->id ? $share->shared_user_id : $share->primary_user_id;
+        $adjacency = [];
+        foreach ($allActiveShares as $share) {
+            $u1 = (int) $share->primary_user_id;
+            $u2 = (int) $share->shared_user_id;
+            $adjacency[$u1][] = $u2;
+            $adjacency[$u2][] = $u1;
         }
 
-        return array_unique($ids);
+        $visited = [];
+        $queue = [(int) $user->id];
+        $visited[(int) $user->id] = true;
+
+        while (!empty($queue)) {
+            $curr = array_shift($queue);
+            foreach ($adjacency[$curr] ?? [] as $neighbor) {
+                if (!isset($visited[$neighbor])) {
+                    $visited[$neighbor] = true;
+                    $queue[] = $neighbor;
+                }
+            }
+        }
+
+        return array_keys($visited);
     }
 }

@@ -22,6 +22,17 @@ class SettingService
             ['setting_value' => $value, 'updated_by' => $user->id]
         );
 
+        // Keep legacy and modern setting keys synchronized
+        if ($key === 'monthly_subscription_default') {
+            Setting::updateOrCreate(['setting_key' => 'payment_amount_1'], ['setting_value' => $value, 'updated_by' => $user->id]);
+        } elseif ($key === 'payment_amount_1') {
+            Setting::updateOrCreate(['setting_key' => 'monthly_subscription_default'], ['setting_value' => $value, 'updated_by' => $user->id]);
+        } elseif ($key === 'one_time_payment_default') {
+            Setting::updateOrCreate(['setting_key' => 'payment_amount_2'], ['setting_value' => $value, 'updated_by' => $user->id]);
+        } elseif ($key === 'payment_amount_2') {
+            Setting::updateOrCreate(['setting_key' => 'one_time_payment_default'], ['setting_value' => $value, 'updated_by' => $user->id]);
+        }
+
         $this->logs->log('update', $setting);
         $this->notifications->sendToAdmins('Payment Value Updated', "{$key} changed to {$value}.", 'setting');
 

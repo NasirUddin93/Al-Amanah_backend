@@ -18,6 +18,8 @@ class User extends Authenticatable
     public function role()                   { return $this->belongsTo(Role::class); }
     public function memberProfile()          { return $this->hasOne(MemberProfile::class); }
     public function adminPaymentPermission() { return $this->hasOne(AdminPaymentPermission::class, 'admin_user_id'); }
+    public function profileSharesPrimary()   { return $this->hasMany(ProfileShare::class, 'primary_user_id'); }
+    public function profileSharesShared()    { return $this->hasMany(ProfileShare::class, 'shared_user_id'); }
     public function transactions()           { return $this->hasMany(Transaction::class, 'member_id'); }
     public function receipts()               { return $this->hasMany(Receipt::class, 'member_id'); }
     public function fdrs()                   { return $this->hasMany(Fdr::class, 'member_id'); }

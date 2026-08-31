@@ -9,6 +9,8 @@ class ReceiptResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $creator = $this->creator;
+
         return [
             'id'             => $this->id,
             'receipt_no'     => $this->receipt_no,
@@ -20,6 +22,18 @@ class ReceiptResource extends JsonResource
                 'name'      => $this->member->name,
                 'member_no' => $this->member->memberProfile?->member_no,
             ]),
+            'created_by'     => $this->whenLoaded('creator', fn () => $creator ? [
+                'id'        => $creator->id,
+                'name'      => $creator->name,
+                'role'      => $creator->role?->name ?? 'admin',
+                'member_no' => $creator->memberProfile?->member_no,
+            ] : null),
+            'confirmed_by'   => $creator ? [
+                'id'        => $creator->id,
+                'name'      => $creator->name,
+                'role'      => $creator->role?->name ?? 'admin',
+                'member_no' => $creator->memberProfile?->member_no,
+            ] : null,
             'transaction'    => $this->whenLoaded('transaction', fn () => [
                 'id'                        => $this->transaction->id,
                 'transaction_no'            => $this->transaction->transaction_no,
