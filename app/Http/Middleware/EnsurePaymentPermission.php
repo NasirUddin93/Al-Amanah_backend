@@ -15,7 +15,7 @@ class EnsurePaymentPermission
         abort_unless(
             $user && ($user->isSuperAdmin() || $user->canChangePayment()),
             403,
-            'Not allowed to change payment values.'
+            'You are not permitted to create or modify transactions. Only Super Admin can assign this permission.'
         );
 
         return $next($request);

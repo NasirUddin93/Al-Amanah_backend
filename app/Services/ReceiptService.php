@@ -18,7 +18,7 @@ class ReceiptService
 
     public function list(User $user)
     {
-        $query = Receipt::with(['member.memberProfile', 'transaction', 'creator']);
+        $query = Receipt::with(['member.memberProfile', 'transaction', 'creator.role', 'creator.memberProfile']);
 
         if ($user->isMember()) $query->whereIn('member_id', $this->visibleMemberIds($user));
 

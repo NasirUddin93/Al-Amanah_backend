@@ -35,6 +35,11 @@ class NotificationService
 
     public function sendToAdmins(string $title, string $message, string $type = 'system'): void
     {
-        $this->sendToRoles(['super_admin', 'admin'], $title, $message, $type);
+        $this->sendToRoles(['super_admin', 'admin', 'accountant'], $title, $message, $type);
+    }
+
+    public function sendToStaff(string $title, string $message, string $type = 'system'): void
+    {
+        $this->sendToRoles(['super_admin', 'admin', 'accountant'], $title, $message, $type);
     }
 }

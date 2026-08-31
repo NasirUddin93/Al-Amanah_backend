@@ -87,6 +87,11 @@ class UserService
 
             // Every user (Admin, Accountant, Member) receives an ID
             $profileData = $profile ?? [];
+            if (array_key_exists('id_photos', $profileData) || array_key_exists('id_photo', $profileData)) {
+                $rawPhotos = $profileData['id_photos'] ?? $profileData['id_photo'] ?? null;
+                $profileData['id_photo'] = $this->processIdPhotos($rawPhotos);
+                unset($profileData['id_photos']);
+            }
             if (empty($profileData['member_no'])) {
                 $profileData['member_no'] = MemberProfile::generateMemberId();
             }
@@ -94,24 +99,64 @@ class UserService
 
             // If the user is a Member, automatically assign any ongoing monthly subscription demands
             if ($role && $role->name === 'member') {
-                $existingMonthlyDemands = \App\Models\Transaction::where('payment_category', 'monthly_payment')
+                $distinctMonths = \App\Models\Transaction::where('payment_category', 'monthly_payment')
                     ->whereNotNull('month')
-                    ->select('month', 'amount', 'transaction_date', 'description')
-                    ->groupBy('month', 'amount', 'transaction_date', 'description')
-                    ->get();
+                    ->distinct()
+                    ->pluck('month');
 
-                foreach ($existingMonthlyDemands as $demand) {
+                foreach ($distinctMonths as $monthName) {
+                    $firstTrx = \App\Models\Transaction::where('payment_category', 'monthly_payment')
+                        ->where('month', $monthName)
+                        ->where('description', 'not like', 'Remaining due%')
+                        ->where('description', 'not like', '%Partial payment%')
+                        ->orderBy('id', 'asc')
+                        ->first();
+
+                    $sampleMemberId = \App\Models\Transaction::where('payment_category', 'monthly_payment')
+                        ->where('month', $monthName)
+                        ->value('member_id');
+
+                    $fullAmount = $sampleMemberId
+                        ? \App\Models\Transaction::where('payment_category', 'monthly_payment')
+                            ->where('month', $monthName)
+                            ->where('member_id', $sampleMemberId)
+                            ->whereIn('status', ['pending', 'paid'])
+                            ->sum('amount')
+                        : ($firstTrx ? $firstTrx->amount : 2000);
+
+                    $cleanTrxNo = $firstTrx?->transaction_no
+                        ?: \App\Models\Transaction::where('payment_category', 'monthly_payment')
+                            ->where('month', $monthName)
+                            ->whereNotNull('transaction_no')
+                            ->value('transaction_no')
+                        ?: \App\Models\Transaction::generateTransactionNo();
+
+                    $dueDate = $firstTrx?->transaction_date
+                        ?: \App\Models\Transaction::where('payment_category', 'monthly_payment')
+                            ->where('month', $monthName)
+                            ->value('transaction_date')
+                        ?: now()->toDateString();
+
+                    $cleanDesc = "Monthly subscription for {$monthName}";
+                    if ($firstTrx && $firstTrx->description) {
+                        $rawDesc = preg_replace('/\s*-\s*Ref:.*$/i', '', $firstTrx->description);
+                        $rawDesc = preg_replace('/\s*\(Partial payment:.*$/i', '', $rawDesc);
+                        if (trim($rawDesc)) {
+                            $cleanDesc = trim($rawDesc);
+                        }
+                    }
+
                     \App\Models\Transaction::create([
                         'member_id'        => $user->id,
                         'created_by'       => auth()->id() ?? 1,
-                        'transaction_no'   => \App\Models\Transaction::generateTransactionNo(),
+                        'transaction_no'   => $cleanTrxNo,
                         'type'             => 'payment',
                         'payment_category' => 'monthly_payment',
-                        'amount'           => $demand->amount,
+                        'amount'           => $fullAmount,
                         'status'           => 'pending',
-                        'month'            => $demand->month,
-                        'transaction_date' => $demand->transaction_date,
-                        'description'      => $demand->description ?: "Monthly subscription for {$demand->month}",
+                        'month'            => $monthName,
+                        'transaction_date' => $dueDate,
+                        'description'      => $cleanDesc,
                     ]);
                 }
             }
@@ -170,6 +215,11 @@ class UserService
 
             // Ensure profile with ID exists
             if ($profile) {
+                if (array_key_exists('id_photos', $profile) || array_key_exists('id_photo', $profile)) {
+                    $rawPhotos = $profile['id_photos'] ?? $profile['id_photo'] ?? null;
+                    $profile['id_photo'] = $this->processIdPhotos($rawPhotos);
+                    unset($profile['id_photos']);
+                }
                 if ($user->memberProfile) {
                     $user->memberProfile->update($profile);
                 } else {
@@ -222,5 +272,54 @@ class UserService
         $this->logs->log('assign-role', $user, $old, $user->only(['role_id', 'designation']));
 
         return $user->load('role');
+    }
+
+    protected function processIdPhotos(mixed $photoData): ?string
+    {
+        if (empty($photoData)) {
+            return null;
+        }
+
+        $items = [];
+        if (is_array($photoData)) {
+            $items = $photoData;
+        } elseif (is_string($photoData)) {
+            $decoded = json_decode($photoData, true);
+            if (is_array($decoded)) {
+                $items = $decoded;
+            } else {
+                $items = [$photoData];
+            }
+        }
+
+        $processed = [];
+        foreach ($items as $item) {
+            if (!is_string($item) || trim($item) === '') {
+                continue;
+            }
+
+            // If it is a base64 data URL
+            if (preg_match('/^data:image\/(\w+);base64,/', $item, $matches)) {
+                $ext = strtolower($matches[1]);
+                if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'])) {
+                    $ext = 'png';
+                }
+                $base64Raw = substr($item, strpos($item, ',') + 1);
+                $decoded = base64_decode($base64Raw);
+                if ($decoded !== false) {
+                    $fileName = 'id_' . time() . '_' . uniqid() . '.' . $ext;
+                    \Illuminate\Support\Facades\Storage::disk('public')->put('id_photos/' . $fileName, $decoded);
+                    $processed[] = asset('storage/id_photos/' . $fileName);
+                }
+            } else {
+                $processed[] = $item;
+            }
+        }
+
+        if (empty($processed)) {
+            return null;
+        }
+
+        return json_encode(array_values($processed));
     }
 }

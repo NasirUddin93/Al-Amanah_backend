@@ -19,7 +19,15 @@ class TransactionService
 
     public function list(User $user)
     {
-        $query = Transaction::with(['member.memberProfile', 'creator.role', 'updater.role', 'receipt']);
+        $query = Transaction::with([
+            'member.memberProfile',
+            'creator.role',
+            'creator.memberProfile',
+            'updater.role',
+            'updater.memberProfile',
+            'receipt.creator.role',
+            'receipt.creator.memberProfile',
+        ]);
 
         if ($user->isMember()) {
             $query->whereIn('member_id', $this->visibleMemberIds($user));
@@ -31,7 +39,7 @@ class TransactionService
             ->when(request('member_id'), fn ($q, $m) => $q->where('member_id', $m))
             ->when(request('type'), fn ($q, $t) => $q->where('type', $t))
             ->latest('transaction_date')
-            ->paginate((int) request('per_page', 15));
+            ->paginate((int) request('per_page', 500));
     }
 
     public function find(User $user, Transaction $transaction): Transaction
@@ -40,15 +48,33 @@ class TransactionService
             abort_unless(in_array($transaction->member_id, $this->visibleMemberIds($user), true), 404);
         }
 
-        return $transaction->load(['member.memberProfile', 'creator.role', 'updater.role', 'receipt']);
+        return $transaction->load([
+            'member.memberProfile',
+            'creator.role',
+            'creator.memberProfile',
+            'updater.role',
+            'updater.memberProfile',
+            'receipt.creator.role',
+            'receipt.creator.memberProfile',
+        ]);
     }
 
     public function create(array $data): Transaction
     {
         return DB::transaction(function () use ($data) {
-            if (empty($data['transaction_no'])) {
+            if (!empty($data['transaction_no'])) {
+                $customTrxNo = trim($data['transaction_no']);
+                $exists = Transaction::where('transaction_no', $customTrxNo)->exists();
+                if ($exists) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'transaction_no' => ["The Transaction ID '{$customTrxNo}' has already been taken. Please choose a unique Transaction ID."],
+                    ]);
+                }
+                $data['transaction_no'] = $customTrxNo;
+            } else {
                 $data['transaction_no'] = Transaction::generateTransactionNo();
             }
+
             $data['created_by'] = auth()->id() ?? 1;
             if (!isset($data['status'])) {
                 $data['status'] = 'paid';
@@ -84,13 +110,27 @@ class TransactionService
             $description = $data['description'] ?? null;
 
             $customTransactionNo = !empty($data['transaction_no']) ? trim($data['transaction_no']) : null;
+            if ($customTransactionNo) {
+                $exists = Transaction::where('transaction_no', $customTransactionNo)->exists();
+                if ($exists) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'transaction_no' => ["The Transaction ID '{$customTransactionNo}' has already been taken. Please choose a unique Transaction ID."],
+                    ]);
+                }
+            }
+
             $createdCount = 0;
             $skippedExistingMonths = [];
             $createdTransactions = [];
 
-            foreach ($memberIds as $memberId) {
-                if ($paymentType === 'monthly_payment' && !empty($months)) {
-                    foreach ($months as $monthName) {
+            if ($paymentType === 'monthly_payment' && !empty($months)) {
+                foreach ($months as $monthIndex => $monthName) {
+                    $monthBase = $customTransactionNo
+                        ? (count($months) > 1 && $monthIndex > 0 ? "{$customTransactionNo}-M" . ($monthIndex + 1) : $customTransactionNo)
+                        : null;
+
+                    $memberCounter = 1;
+                    foreach ($memberIds as $memberId) {
                         // Check if the member already has an active (pending or paid) record for this month/year
                         $alreadyExists = Transaction::where('member_id', $memberId)
                             ->where('payment_category', 'monthly_payment')
@@ -103,32 +143,19 @@ class TransactionService
                             continue;
                         }
 
-                        if ($customTransactionNo) {
-                            if (preg_match('/^(.*?)(\d+)$/', $customTransactionNo, $matches)) {
-                                $prefix = $matches[1];
-                                $baseNum = (int) $matches[2];
-                                $padLength = strlen($matches[2]);
-                                $nextNum = $baseNum + $createdCount;
-
-                                do {
-                                    $assignedTrxNo = $prefix . str_pad((string) $nextNum, $padLength, '0', STR_PAD_LEFT);
-                                    $exists = Transaction::where('transaction_no', $assignedTrxNo)->exists();
-                                    if ($exists) {
-                                        $nextNum++;
-                                    }
-                                } while ($exists);
-                            } else {
-                                $assignedTrxNo = $createdCount === 0 ? $customTransactionNo : ($customTransactionNo . '-' . ($createdCount + 1));
+                        if ($monthBase) {
+                            $uniqueTrxNo = count($memberIds) > 1 ? "{$monthBase}-{$memberCounter}" : $monthBase;
+                            while (Transaction::where('transaction_no', $uniqueTrxNo)->exists()) {
+                                $uniqueTrxNo = Transaction::generateTransactionNo();
                             }
                         } else {
-                            $assignedTrxNo = Transaction::generateTransactionNo();
+                            $uniqueTrxNo = Transaction::generateTransactionNo();
                         }
-                        $createdCount++;
 
                         $trx = Transaction::create([
                             'member_id'        => $memberId,
                             'created_by'       => auth()->id() ?? 1,
-                            'transaction_no'   => $assignedTrxNo,
+                            'transaction_no'   => $uniqueTrxNo,
                             'type'             => 'payment',
                             'payment_category' => 'monthly_payment',
                             'amount'           => $amount,
@@ -145,34 +172,25 @@ class TransactionService
                             'payment_due'
                         );
                         $createdTransactions[] = $trx;
+                        $memberCounter++;
                     }
-                } else {
+                }
+            } else {
+                $memberCounter = 1;
+                foreach ($memberIds as $memberId) {
                     if ($customTransactionNo) {
-                        if (preg_match('/^(.*?)(\d+)$/', $customTransactionNo, $matches)) {
-                            $prefix = $matches[1];
-                            $baseNum = (int) $matches[2];
-                            $padLength = strlen($matches[2]);
-                            $nextNum = $baseNum + $createdCount;
-
-                            do {
-                                $assignedTrxNo = $prefix . str_pad((string) $nextNum, $padLength, '0', STR_PAD_LEFT);
-                                $exists = Transaction::where('transaction_no', $assignedTrxNo)->exists();
-                                if ($exists) {
-                                    $nextNum++;
-                                }
-                            } while ($exists);
-                        } else {
-                            $assignedTrxNo = $createdCount === 0 ? $customTransactionNo : ($customTransactionNo . '-' . ($createdCount + 1));
+                        $uniqueTrxNo = count($memberIds) > 1 ? "{$customTransactionNo}-{$memberCounter}" : $customTransactionNo;
+                        while (Transaction::where('transaction_no', $uniqueTrxNo)->exists()) {
+                            $uniqueTrxNo = Transaction::generateTransactionNo();
                         }
                     } else {
-                        $assignedTrxNo = Transaction::generateTransactionNo();
+                        $uniqueTrxNo = Transaction::generateTransactionNo();
                     }
-                    $createdCount++;
 
                     $trx = Transaction::create([
                         'member_id'        => $memberId,
                         'created_by'       => auth()->id() ?? 1,
-                        'transaction_no'   => $assignedTrxNo,
+                        'transaction_no'   => $uniqueTrxNo,
                         'type'             => 'payment',
                         'payment_category' => 'one_time',
                         'amount'           => $amount,
@@ -189,6 +207,7 @@ class TransactionService
                         'payment_due'
                     );
                     $createdTransactions[] = $trx;
+                    $memberCounter++;
                 }
             }
 
@@ -228,17 +247,39 @@ class TransactionService
         });
     }
 
-    public function collectPayment(User $user, Transaction $trx, array $data): array
+    public function collectPayment(Transaction $trx, array $data, ?User $user = null): array
     {
+        $user = $user ?? auth()->user() ?? User::find(1);
+
         return DB::transaction(function () use ($user, $trx, $data) {
-            $paidAmount = (float) ($data['amount'] ?? $trx->amount);
+            $paidAmount = (float) ($data['paid_amount'] ?? $data['amount'] ?? $trx->amount);
             $paymentMethod = $data['payment_method'] ?? 'cash';
             $paymentDate = $data['payment_date'] ?? now()->toDateString();
             $notes = !empty($data['notes']) ? trim($data['notes']) : null;
-            $trxRef = !empty($data['transaction_reference']) ? trim($data['transaction_reference']) : null;
+            $trxRef = !empty($data['trx_reference']) 
+                ? trim($data['trx_reference']) 
+                : (!empty($data['transaction_reference']) 
+                    ? trim($data['transaction_reference']) 
+                    : (!empty($data['reference']) ? trim($data['reference']) : null));
 
             $originalAmount = (float) $trx->amount;
             $remainingDue = max(0, $originalAmount - $paidAmount);
+
+            if ($trxRef) {
+                // Check if this reference has already been used on another non-rejected transaction
+                $existingTrx = Transaction::where('id', '!=', $trx->id)
+                    ->where('member_trx_reference', $trxRef)
+                    ->where('status', '!=', 'rejected')
+                    ->first();
+
+                if ($existingTrx) {
+                    $ownerName = $existingTrx->member ? $existingTrx->member->name : 'another member';
+                    $itemLabel = $existingTrx->month ?: $existingTrx->transaction_no;
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'trx_reference' => ["The Transaction Reference / TrxID '{$trxRef}' has already been submitted for {$ownerName} ({$itemLabel}). Reference IDs must be unique across all active payments."],
+                    ]);
+                }
+            }
 
             if ($paidAmount >= $originalAmount) {
                 // Full payment

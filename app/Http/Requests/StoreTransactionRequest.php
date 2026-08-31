@@ -15,7 +15,14 @@ class StoreTransactionRequest extends FormRequest
             'amount'           => ['required', 'numeric', 'min:0'],
             'transaction_date' => ['required', 'date'],
             'description'      => ['nullable', 'string'],
-            'transaction_no'   => ['nullable', 'string', 'max:100'],
+            'transaction_no'   => ['nullable', 'string', 'max:100', 'unique:transactions,transaction_no'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'transaction_no.unique' => 'The Transaction ID has already been taken. Please choose a unique Transaction ID.',
         ];
     }
 }

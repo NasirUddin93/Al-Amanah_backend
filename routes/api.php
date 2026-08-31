@@ -36,27 +36,31 @@ Route::middleware('auth:sanctum')->group(function () {
     // Read lists are role-scoped inside services (member sees own/shared only)
     Route::get('transactions', [TransactionController::class, 'index']);
     Route::get('transactions/{transaction}', [TransactionController::class, 'show']);
+    Route::post('transactions/batch-upload-receipt-photo', [TransactionController::class, 'batchUploadReceiptPhoto']);
     Route::post('transactions/{transaction}/upload-receipt-photo', [TransactionController::class, 'uploadReceiptPhoto']);
     Route::get('receipts', [ReceiptController::class, 'index']);
     Route::get('fdrs', [FdrController::class, 'index']);
 
-    // Transactions & FDRs management (Super Admin + Admin)
-    Route::middleware('role:super_admin,admin')->group(function () {
+    // Transactions & FDRs creation / modification / deletion (Super Admin + Admin with permission)
+    Route::middleware(['role:super_admin,admin', 'payment.permission'])->group(function () {
         Route::post('transactions', [TransactionController::class, 'store']);
         Route::post('transactions/generate-payments', [TransactionController::class, 'generatePayments']);
-        Route::post('transactions/{transaction}/collect-payment', [TransactionController::class, 'collectPayment']);
-        Route::post('transactions/{transaction}/reject-receipt-photo', [TransactionController::class, 'rejectReceiptPhoto']);
         Route::put('transactions/{transaction}', [TransactionController::class, 'update']);
+        Route::delete('transactions/{transaction}', [TransactionController::class, 'destroy']);
 
         Route::post('fdrs', [FdrController::class, 'store']);
         Route::put('fdrs/{fdr}', [FdrController::class, 'update']);
-
-        Route::get('reports/transactions', [ReportController::class, 'transactions']);
     });
 
-    // Delete transactions: Super Admin + Admin
-    Route::delete('transactions/{transaction}', [TransactionController::class, 'destroy'])
-        ->middleware('role:super_admin,admin');
+    // Payment Settlement, Slip Verification, Reports, and Users List (Super Admin + Admin + Accountant)
+    Route::middleware('role:super_admin,admin,accountant')->group(function () {
+        Route::post('transactions/{transaction}/collect-payment', [TransactionController::class, 'collectPayment']);
+        Route::post('transactions/{transaction}/reject-receipt-photo', [TransactionController::class, 'rejectReceiptPhoto']);
+        Route::get('reports/transactions', [ReportController::class, 'transactions']);
+        Route::get('reports/stats', [ReportController::class, 'stats']);
+        Route::get('users', [UserController::class, 'index']);
+    });
+
     Route::delete('fdrs/{fdr}', [FdrController::class, 'destroy'])->middleware('role:super_admin');
 
     // Receipts management (Super Admin + Admin + Accountant)
@@ -66,24 +70,28 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('receipts/{receipt}', [ReceiptController::class, 'destroy']);
     });
 
-    // Meeting expenses (Super Admin + Admin)
-    Route::middleware('role:super_admin,admin')->group(function () {
+    // Meeting expenses (Super Admin + Admin + Accountant)
+    Route::middleware('role:super_admin,admin,accountant')->group(function () {
         Route::get('meeting-expenses', [MeetingExpenseController::class, 'index']);
         Route::post('meeting-expenses', [MeetingExpenseController::class, 'store']);
         Route::put('meeting-expenses/{expense}', [MeetingExpenseController::class, 'update']);
         Route::delete('meeting-expenses/{expense}', [MeetingExpenseController::class, 'destroy']);
     });
 
-    // Profile shares (members can view own; Super Admin manages)
+    // Profile shares / Merged Accounts (members can view own; Super Admin & Admin manage)
     Route::get('profile-shares', [ProfileShareController::class, 'index']);
-    Route::middleware('role:super_admin')->group(function () {
+    Route::middleware('role:super_admin,admin')->group(function () {
         Route::post('profile-shares', [ProfileShareController::class, 'store']);
         Route::put('profile-shares/{profileShare}', [ProfileShareController::class, 'update']);
+        Route::delete('profile-shares/{profileShare}', [ProfileShareController::class, 'destroy']);
     });
 
     // Super Admin only area
     Route::middleware('role:super_admin')->group(function () {
-        Route::apiResource('users', UserController::class);
+        Route::post('users', [UserController::class, 'store']);
+        Route::get('users/{user}', [UserController::class, 'show']);
+        Route::put('users/{user}', [UserController::class, 'update']);
+        Route::delete('users/{user}', [UserController::class, 'destroy']);
         Route::post('users/{user}/assign-role', [UserController::class, 'assignRole']);
         Route::apiResource('roles', RoleController::class);
         Route::get('permissions', [RoleController::class, 'permissions']);

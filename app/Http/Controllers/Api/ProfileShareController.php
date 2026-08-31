@@ -25,8 +25,18 @@ class ProfileShareController extends Controller
 
     public function update(Request $request, ProfileShare $profileShare)
     {
-        $data = $request->validate(['status' => ['required', 'in:active,inactive']]);
+        $data = $request->validate([
+            'status'     => ['nullable', 'in:active,inactive'],
+            'group_name' => ['nullable', 'string', 'max:100'],
+        ]);
 
-        return new ProfileShareResource($this->service->updateStatus($profileShare, $data['status']));
+        return new ProfileShareResource($this->service->update($profileShare, $data));
+    }
+
+    public function destroy(ProfileShare $profileShare)
+    {
+        $this->service->delete($profileShare);
+
+        return response()->json(['message' => 'Linked profile removed successfully.']);
     }
 }

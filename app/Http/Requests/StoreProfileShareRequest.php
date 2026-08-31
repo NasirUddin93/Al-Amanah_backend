@@ -10,10 +10,15 @@ class StoreProfileShareRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'primary_user_id' => ['required', 'exists:users,id'],
-            'shared_user_id'  => ['required', 'exists:users,id', 'different:primary_user_id'],
-            'relation'        => ['required', 'string', 'max:50'],
-            'status'          => ['nullable', Rule::in(['active', 'inactive'])],
+            'primary_user_id'   => ['nullable', 'exists:users,id'],
+            'shared_user_id'    => ['nullable', 'exists:users,id'],
+            'shared_user_ids'   => ['nullable', 'array'],
+            'shared_user_ids.*' => ['exists:users,id'],
+            'member_ids'        => ['nullable', 'array', 'min:2'],
+            'member_ids.*'      => ['exists:users,id'],
+            'relation'          => ['nullable', 'string', 'max:50'],
+            'group_name'        => ['nullable', 'string', 'max:100'],
+            'status'            => ['nullable', Rule::in(['active', 'inactive'])],
         ];
     }
 }
