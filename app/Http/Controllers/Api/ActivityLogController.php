@@ -39,7 +39,7 @@ class ActivityLogController extends Controller
             });
         }
 
-        $perPage = min((int) $request->get('per_page', 25), 100);
+        $perPage = min((int) $request->input('per_page', 25), 100);
 
         return ActivityLogResource::collection($query->paginate($perPage));
     }
