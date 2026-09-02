@@ -12,10 +12,14 @@ use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\TransactionController;
+use App\Http\Controllers\Api\IdPhotoController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('login', [AuthController::class, 'login']);
+
+// Secure private ID photo streaming (supports Bearer token and ?token= query parameter)
+Route::get('id-photos/{filename}', [IdPhotoController::class, 'show']);
 
 Route::middleware('auth:sanctum')->group(function () {
 

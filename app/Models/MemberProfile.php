@@ -24,10 +24,8 @@ class MemberProfile extends Model
         }
         $raw = $this->attributes['id_photo'];
         $decoded = json_decode($raw, true);
-        if (is_array($decoded)) {
-            return array_values(array_filter($decoded));
-        }
-        return [$raw];
+        $items = is_array($decoded) ? array_values(array_filter($decoded)) : [$raw];
+        return array_values(array_filter(array_map(fn($p) => $this->normalizePhotoUrl($p), $items)));
     }
 
     public function getIdPhotoAttribute($value): ?string
@@ -37,9 +35,21 @@ class MemberProfile extends Model
         }
         $decoded = json_decode($value, true);
         if (is_array($decoded)) {
-            return $decoded[0] ?? null;
+            return $this->normalizePhotoUrl($decoded[0] ?? null);
         }
-        return $value;
+        return $this->normalizePhotoUrl($value);
+    }
+
+    protected function normalizePhotoUrl(?string $item): ?string
+    {
+        if (empty($item)) {
+            return null;
+        }
+        if (str_contains($item, 'storage/id_photos/')) {
+            $filename = basename(parse_url($item, PHP_URL_PATH));
+            return url('api/id-photos/' . $filename);
+        }
+        return $item;
     }
 
     public static function generateMemberId(): string

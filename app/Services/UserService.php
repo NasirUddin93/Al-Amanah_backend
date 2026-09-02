@@ -308,11 +308,17 @@ class UserService
                 $decoded = base64_decode($base64Raw);
                 if ($decoded !== false) {
                     $fileName = 'id_' . time() . '_' . uniqid() . '.' . $ext;
-                    \Illuminate\Support\Facades\Storage::disk('public')->put('id_photos/' . $fileName, $decoded);
-                    $processed[] = asset('storage/id_photos/' . $fileName);
+                    \Illuminate\Support\Facades\Storage::disk('id_photos')->put($fileName, $decoded);
+                    $processed[] = url('api/id-photos/' . $fileName);
                 }
             } else {
-                $processed[] = $item;
+                // If existing legacy URL pointing to /storage/id_photos/, convert to secure endpoint
+                if (str_contains($item, 'storage/id_photos/')) {
+                    $legacyName = basename(parse_url($item, PHP_URL_PATH));
+                    $processed[] = url('api/id-photos/' . $legacyName);
+                } else {
+                    $processed[] = $item;
+                }
             }
         }
 
