@@ -22,6 +22,7 @@ class Transaction extends Model
         'transaction_date',
         'description',
         'receipt_photo',
+        'receipt_photo_thumbnail',
         'receipt_photo_uploaded_at',
         'receipt_photo_uploaded_by',
         'member_paid_amount',

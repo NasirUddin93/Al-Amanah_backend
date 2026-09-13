@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\MediaService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -9,6 +10,7 @@ class TransactionResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $media = app(MediaService::class);
         $lastModifier = $this->updater ?? $this->creator;
 
         return [
@@ -46,7 +48,8 @@ class TransactionResource extends JsonResource
                 'action'       => $this->updated_by ? 'Updated' : 'Created',
             ] : null,
             'receipt'                   => $this->whenLoaded('receipt'),
-            'receipt_photo'             => $this->receipt_photo,
+            'receipt_photo'             => $media->url($this->receipt_photo),
+            'receipt_photo_thumbnail'   => $media->url($this->receipt_photo_thumbnail) ?? $media->url($this->receipt_photo),
             'receipt_photo_uploaded_at' => $this->receipt_photo_uploaded_at ? (is_string($this->receipt_photo_uploaded_at) ? $this->receipt_photo_uploaded_at : $this->receipt_photo_uploaded_at->format('Y-m-d H:i')) : null,
             'member_paid_amount'        => $this->member_paid_amount !== null ? (float) $this->member_paid_amount : null,
             'member_trx_reference'      => $this->member_trx_reference,

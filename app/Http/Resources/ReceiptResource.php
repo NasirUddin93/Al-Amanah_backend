@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\MediaService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -9,6 +10,7 @@ class ReceiptResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $media = app(MediaService::class);
         $creator = $this->creator;
 
         return [
@@ -39,7 +41,8 @@ class ReceiptResource extends JsonResource
                 'transaction_no'            => $this->transaction->transaction_no,
                 'description'               => $this->transaction->description,
                 'month'                     => $this->transaction->month,
-                'receipt_photo'             => $this->transaction->receipt_photo,
+                'receipt_photo'             => $media->url($this->transaction->receipt_photo),
+                'receipt_photo_thumbnail'   => $media->url($this->transaction->receipt_photo_thumbnail) ?? $media->url($this->transaction->receipt_photo),
                 'receipt_photo_uploaded_at' => $this->transaction->receipt_photo_uploaded_at,
             ]),
             'created_at'     => $this->created_at,

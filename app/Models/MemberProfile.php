@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\MediaService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -45,11 +46,16 @@ class MemberProfile extends Model
         if (empty($item)) {
             return null;
         }
-        if (str_contains($item, 'storage/id_photos/')) {
+
+        $media = app(MediaService::class);
+
+        // Legacy absolute URLs pointing at the public copy of id photos.
+        if (str_contains($item, 'storage/id_photos/') || str_contains($item, 'id-photos/')) {
             $filename = basename(parse_url($item, PHP_URL_PATH));
-            return url('api/id-photos/' . $filename);
+            return $media->url($filename, 'id_photos');
         }
-        return $item;
+
+        return $media->url($item, 'id_photos');
     }
 
     public static function generateMemberId(): string

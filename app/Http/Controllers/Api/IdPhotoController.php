@@ -54,31 +54,51 @@ class IdPhotoController extends Controller
         $isStaff = $user->isSuperAdmin() || $user->hasAnyRole(['admin', 'super_admin', 'accountant']);
 
         if (!$isStaff) {
-            // Find who this photo belongs to
-            $profile = MemberProfile::where('id_photo', 'like', '%' . $cleanFilename . '%')->first();
+            // Find who this photo belongs to using an exact JSON parse
+            // instead of LIKE (filenames contain '_' which is a SQL wildcard).
+            $profiles = MemberProfile::whereNotNull('id_photo')
+                ->where('id_photo', '!=', '')
+                ->get(['id', 'user_id', 'id_photo']);
 
             $isAllowed = false;
-            if ($profile) {
+            foreach ($profiles as $profile) {
+                $decoded = json_decode($profile->id_photo, true);
+                $items = is_array($decoded) ? $decoded : [$profile->id_photo];
+
+                $matched = false;
+                foreach ($items as $item) {
+                    if (is_string($item) && trim($item) !== '' && basename(trim($item)) === $cleanFilename) {
+                        $matched = true;
+                        break;
+                    }
+                }
+
+                if (!$matched) {
+                    continue;
+                }
+
                 // If it is the user's own profile
                 if ($profile->user_id === $user->id) {
                     $isAllowed = true;
-                } else {
-                    // Check if the user is in an active merged group with the photo owner
-                    $isShared = ProfileShare::where('status', 'active')
-                        ->where(function ($q) use ($user, $profile) {
-                            $q->where(function ($sub) use ($user, $profile) {
-                                $sub->where('primary_user_id', $user->id)
-                                    ->where('shared_user_id', $profile->user_id);
-                            })->orWhere(function ($sub) use ($user, $profile) {
-                                $sub->where('primary_user_id', $profile->user_id)
-                                    ->where('shared_user_id', $user->id);
-                            });
-                        })
-                        ->exists();
+                    break;
+                }
 
-                    if ($isShared) {
-                        $isAllowed = true;
-                    }
+                // Check if the user is in an active merged group with the photo owner
+                $isShared = ProfileShare::where('status', 'active')
+                    ->where(function ($q) use ($user, $profile) {
+                        $q->where(function ($sub) use ($user, $profile) {
+                            $sub->where('primary_user_id', $user->id)
+                                ->where('shared_user_id', $profile->user_id);
+                        })->orWhere(function ($sub) use ($user, $profile) {
+                            $sub->where('primary_user_id', $profile->user_id)
+                                ->where('shared_user_id', $user->id);
+                        });
+                    })
+                    ->exists();
+
+                if ($isShared) {
+                    $isAllowed = true;
+                    break;
                 }
             }
 

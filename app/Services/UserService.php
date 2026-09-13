@@ -16,6 +16,8 @@ class UserService
     public function __construct(
         protected ActivityLogService $logs,
         protected NotificationService $notifications,
+        protected MediaService $media,
+        protected ImageProcessor $imageProcessor,
     ) {}
 
     public function list()
@@ -216,8 +218,14 @@ class UserService
             // Ensure profile with ID exists
             if ($profile) {
                 if (array_key_exists('id_photos', $profile) || array_key_exists('id_photo', $profile)) {
+                    $rawStored = $user->memberProfile ? $user->memberProfile->getRawOriginal('id_photo') : null;
+                    $previousPhotos = $this->storedIdPhotosToList($rawStored);
+
                     $rawPhotos = $profile['id_photos'] ?? $profile['id_photo'] ?? null;
                     $profile['id_photo'] = $this->processIdPhotos($rawPhotos);
+
+                    $this->deleteRemovedIdPhotos($previousPhotos, $profile['id_photo']);
+
                     unset($profile['id_photos']);
                 }
                 if ($user->memberProfile) {
@@ -274,6 +282,25 @@ class UserService
         return $user->load('role');
     }
 
+    /**
+     * Convert the raw `user_profiles.id_photo` column value to a list of photo
+     * references. Accepts JSON arrays, plain filenames, or legacy URL strings.
+     */
+    protected function storedIdPhotosToList(?string $stored): array
+    {
+        if (empty($stored)) {
+            return [];
+        }
+
+        $decoded = json_decode($stored, true);
+        $items = is_array($decoded) ? $decoded : [$stored];
+
+        return array_values(array_filter(array_map(
+            fn ($item) => (is_string($item) && trim($item) !== '') ? trim($item) : null,
+            $items
+        )));
+    }
+
     protected function processIdPhotos(mixed $photoData): ?string
     {
         if (empty($photoData)) {
@@ -298,28 +325,33 @@ class UserService
                 continue;
             }
 
-            // If it is a base64 data URL
-            if (preg_match('/^data:image\/(\w+);base64,/', $item, $matches)) {
-                $ext = strtolower($matches[1]);
-                if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'])) {
-                    $ext = 'png';
+            // Base64 data URL -> store as a new private ID document.
+            if ($this->media->isBase64DataUrl($item)) {
+                try {
+                    $decoded = $this->media->decodeBase64($item);
+                } catch (\InvalidArgumentException $e) {
+                    throw ValidationException::withMessages([
+                        'profile.id_photos' => $e->getMessage(),
+                    ]);
                 }
-                $base64Raw = substr($item, strpos($item, ',') + 1);
-                $decoded = base64_decode($base64Raw);
-                if ($decoded !== false) {
-                    $fileName = 'id_' . time() . '_' . uniqid() . '.' . $ext;
-                    \Illuminate\Support\Facades\Storage::disk('id_photos')->put($fileName, $decoded);
-                    $processed[] = url('api/id-photos/' . $fileName);
+
+                $fileName = $this->imageProcessor->processIdPhoto($decoded) ?? $this->media->storeIdPhoto($decoded, $this->media->extractExtension($item));
+                if ($fileName === null || trim($fileName) === '') {
+                    throw ValidationException::withMessages([
+                        'profile.id_photos' => 'The uploaded photo could not be processed.',
+                    ]);
                 }
-            } else {
-                // If existing legacy URL pointing to /storage/id_photos/, convert to secure endpoint
-                if (str_contains($item, 'storage/id_photos/')) {
-                    $legacyName = basename(parse_url($item, PHP_URL_PATH));
-                    $processed[] = url('api/id-photos/' . $legacyName);
-                } else {
-                    $processed[] = $item;
-                }
+                $processed[] = $fileName;
+                continue;
             }
+
+            // Normalize existing legacy / full-URL values to relative disk filenames.
+            $normalized = $this->media->normalizePath($item);
+            if ($normalized === null || $normalized === '') {
+                continue;
+            }
+
+            $processed[] = $normalized;
         }
 
         if (empty($processed)) {
@@ -327,5 +359,43 @@ class UserService
         }
 
         return json_encode(array_values($processed));
+    }
+
+    /**
+     * Delete private ID photo files that were removed from a profile's list.
+     *
+     * @param  array  $previousPhotos  Filenames stored before the update.
+     * @param  string|null  $newPhotosJson  JSON array of the remaining filenames.
+     */
+    protected function deleteRemovedIdPhotos(array $previousPhotos, ?string $newPhotosJson): void
+    {
+        if (!is_array($previousPhotos) || empty($previousPhotos)) {
+            return;
+        }
+
+        $current = [];
+        if (is_string($newPhotosJson)) {
+            $decoded = json_decode($newPhotosJson, true);
+            if (is_array($decoded)) {
+                $current = $decoded;
+            } else {
+                $current = [$newPhotosJson];
+            }
+        }
+
+        $currentNormalized = array_map(fn ($p) => $this->media->normalizePath($p), $current);
+
+        foreach ($previousPhotos as $previous) {
+            if (!is_string($previous) || trim($previous) === '') {
+                continue;
+            }
+
+            $previousNormalized = $this->media->normalizePath($previous);
+            if ($previousNormalized === null || in_array($previousNormalized, $currentNormalized, true)) {
+                continue;
+            }
+
+            $this->media->delete($previousNormalized, 'id_photos');
+        }
     }
 }

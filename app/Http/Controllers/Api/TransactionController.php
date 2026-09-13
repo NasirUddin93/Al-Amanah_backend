@@ -9,6 +9,8 @@ use App\Http\Resources\TransactionCollection;
 use App\Http\Resources\TransactionResource;
 use App\Models\Transaction;
 use App\Services\Concerns\ResolvesSharedMembers;
+use App\Services\ImageProcessor;
+use App\Services\MediaService;
 use App\Services\NotificationService;
 use App\Services\TransactionService;
 use Illuminate\Http\Request;
@@ -21,6 +23,8 @@ class TransactionController extends Controller
     public function __construct(
         protected TransactionService $service,
         protected NotificationService $notifications,
+        protected MediaService $media,
+        protected ImageProcessor $imageProcessor,
     ) {}
 
     public function index(Request $request)
@@ -109,28 +113,22 @@ class TransactionController extends Controller
             'receipt_photo_uploaded_by' => auth()->id(),
         ];
 
-        if ($request->hasFile('photo')) {
-            $path = $request->file('photo')->store('receipts', 'public');
-            $updateData['receipt_photo'] = asset('storage/' . $path);
-        } elseif ($request->filled('photo_data')) {
-            $photoData = $request->input('photo_data');
-            
-            // Check if photo_data is a Base64 Data URL (data:image/...;base64,...)
-            if (preg_match('/^data:image\/(\w+);base64,/', $photoData, $matches)) {
-                $ext = strtolower($matches[1]);
-                if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'])) {
-                    $ext = 'png';
-                }
-                $base64Raw = substr($photoData, strpos($photoData, ',') + 1);
-                $decoded = base64_decode($base64Raw);
-                if ($decoded !== false) {
-                    $fileName = 'receipt_' . $transaction->id . '_' . time() . '_' . uniqid() . '.' . $ext;
-                    Storage::disk('public')->put('receipts/' . $fileName, $decoded);
-                    $updateData['receipt_photo'] = asset('storage/receipts/' . $fileName);
-                }
-            } elseif (filter_var($photoData, FILTER_VALIDATE_URL) || str_starts_with($photoData, '/storage/')) {
-                $updateData['receipt_photo'] = $photoData;
+        $photoResult = $this->resolveReceiptPhoto($request);
+
+        if ($photoResult !== null) {
+            $updateData['receipt_photo'] = $photoResult['path'];
+
+            // Delete the previously stored file when replacing it.
+            if ($transaction->receipt_photo) {
+                $this->media->delete(
+                    $this->media->normalizePath($transaction->receipt_photo)
+                );
+                $this->media->delete(
+                    $this->media->normalizePath($transaction->receipt_photo_thumbnail)
+                );
             }
+
+            $updateData['receipt_photo_thumbnail'] = $photoResult['thumbnail'] ?? null;
         }
 
         if ($request->filled('paid_amount')) {
@@ -286,28 +284,9 @@ class TransactionController extends Controller
         $allocations = collect($request->input('allocations', []))->keyBy('transaction_id');
 
         // Store the photo once
-        $photoUrl = null;
-        if ($request->hasFile('photo')) {
-            $path = $request->file('photo')->store('receipts', 'public');
-            $photoUrl = asset('storage/' . $path);
-        } elseif ($request->filled('photo_data')) {
-            $photoData = $request->input('photo_data');
-            if (preg_match('/^data:image\/(\w+);base64,/', $photoData, $matches)) {
-                $ext = strtolower($matches[1]);
-                if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'])) {
-                    $ext = 'png';
-                }
-                $base64Raw = substr($photoData, strpos($photoData, ',') + 1);
-                $decoded = base64_decode($base64Raw);
-                if ($decoded !== false) {
-                    $fileName = 'batch_receipt_' . $user->id . '_' . time() . '_' . uniqid() . '.' . $ext;
-                    Storage::disk('public')->put('receipts/' . $fileName, $decoded);
-                    $photoUrl = asset('storage/receipts/' . $fileName);
-                }
-            } elseif (filter_var($photoData, FILTER_VALIDATE_URL) || str_starts_with($photoData, '/storage/')) {
-                $photoUrl = $photoData;
-            }
-        }
+        $photoResult = $this->resolveReceiptPhoto($request);
+        $photoUrl = $photoResult['path'] ?? null;
+        $photoThumbnail = $photoResult['thumbnail'] ?? null;
 
         $baseRef = trim($request->input('trx_reference'));
         $paymentMethod = $request->input('payment_method');
@@ -317,7 +296,7 @@ class TransactionController extends Controller
         $memberNames = [];
         $months = [];
 
-        \DB::transaction(function () use ($transactions, $photoUrl, $baseRef, $paymentMethod, $comment, $allocations, $totalCount, &$totalAmount, &$memberNames, &$months, $user) {
+        \DB::transaction(function () use ($transactions, $photoUrl, $photoThumbnail, $baseRef, $paymentMethod, $comment, $allocations, $totalCount, &$totalAmount, &$memberNames, &$months, $user) {
             $index = 0;
             foreach ($transactions as $trx) {
                 $index++;
@@ -330,6 +309,7 @@ class TransactionController extends Controller
 
                 $trx->update([
                     'receipt_photo'             => $photoUrl,
+                    'receipt_photo_thumbnail'    => $photoThumbnail,
                     'receipt_photo_uploaded_at'  => now(),
                     'receipt_photo_uploaded_by'  => $user->id,
                     'member_paid_amount'        => $paidAmount,
@@ -363,6 +343,58 @@ class TransactionController extends Controller
                 $transactions->fresh(['member.memberProfile', 'creator.role', 'updater.role', 'receipt'])
             ),
         ]);
+    }
+
+    /**
+     * Resolve a receipt photo from either a multipart file or a base64 data URL
+     * payload, process it (resize + WebP + thumbnail) and store it.
+     *
+     * Returns ['path' => relativePath, 'thumbnail' => relativeThumbPath] or null
+     * when no photo was supplied. Legacy URL / /storage/ passthrough values are
+     * normalized to their relative storage path.
+     *
+     * @return array{path: string, thumbnail?: string|null}|null
+     */
+    protected function resolveReceiptPhoto(Request $request): ?array
+    {
+        if ($request->hasFile('photo')) {
+            $binary = file_get_contents($request->file('photo')->getRealPath());
+
+            if ($binary === false) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'photo' => 'Unable to read the uploaded file.',
+                ]);
+            }
+
+            return $this->imageProcessor->processReceipt($binary);
+        }
+
+        if ($request->filled('photo_data')) {
+            $photoData = $request->input('photo_data');
+
+            if ($this->media->isBase64DataUrl($photoData)) {
+                try {
+                    $decoded = $this->media->decodeBase64($photoData);
+                } catch (\InvalidArgumentException $e) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'photo_data' => $e->getMessage(),
+                    ]);
+                }
+
+                return $this->imageProcessor->processReceipt($decoded);
+            }
+
+            // Legacy passthrough: an already-stored URL or /storage/ path.
+            if (filter_var($photoData, FILTER_VALIDATE_URL) || str_starts_with($photoData, '/storage/')) {
+                $normalized = $this->media->normalizePath($photoData);
+
+                if ($normalized !== null && $normalized !== '') {
+                    return ['path' => $normalized, 'thumbnail' => null];
+                }
+            }
+        }
+
+        return null;
     }
 
     public function destroy(Transaction $transaction)
